@@ -1,0 +1,26 @@
+# dependencies
+node_modules/
+*/node_modules/
+
+# build output
+dist/
+*/dist/
+.vite/
+
+# runtime data
+backend/data.json
+
+# logs
+*.log
+npm-debug.log*
+
+# editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# env
+.env
+.env.local
