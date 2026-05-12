@@ -15,14 +15,32 @@
   --accent: #111111;
 }
 
-* { box-sizing: border-box; }
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 html, body, #root { height: 100%; margin: 0; }
 body {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Kaku Gothic ProN",
     "Yu Gothic", Meiryo, sans-serif;
   background: var(--neon);
   color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+  overscroll-behavior: none;
 }
+
+/* 戻るボタン: デスクトップでは非表示 */
+.back-button {
+  display: none;
+  width: 36px;
+  height: 36px;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font-size: 28px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+  margin-right: 4px;
+}
+.back-button:active { transform: scale(0.92); }
 
 /* =========================================================
    Login
@@ -345,6 +363,29 @@ body {
   color: var(--ink);
 }
 
+/* ---------- Mention pills in message body ---------- */
+.mention {
+  display: inline-block;
+  padding: 0 6px;
+  border-radius: 4px;
+  background: rgba(17, 100, 163, 0.12);
+  color: #1164a3;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.mention.mention-me {
+  background: var(--neon);
+  color: var(--ink);
+  border: 1px solid var(--ink);
+  padding: 0 5px;
+}
+.msg.mentions-me {
+  background: linear-gradient(90deg, rgba(223, 255, 0, 0.18) 0%, transparent 60%);
+  border-left: 3px solid var(--neon-dark);
+  padding-left: 9px;
+  margin-left: -12px;
+}
+
 /* ---------- Inline edit box ---------- */
 .edit-box {
   margin-top: 4px;
@@ -540,18 +581,7 @@ body {
   border-top: 2px solid var(--ink);
   background: var(--neon);
 }
-.composer textarea {
-  flex: 1;
-  resize: none;
-  padding: 10px 12px;
-  border-radius: 8px;
-  border: 1px solid var(--ink);
-  background: var(--white);
-  color: var(--ink);
-  font-family: inherit;
-  font-size: 14px;
-}
-.composer textarea:disabled { background: rgba(255, 255, 255, 0.5); }
+/* (textarea styles moved to .composer-input textarea, which wraps for popup positioning) */
 .composer button {
   padding: 0 18px;
   border: 2px solid var(--ink);
@@ -566,3 +596,224 @@ body {
   color: var(--ink);
 }
 .composer button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* ---------- Composer input wrapper for mention popup ---------- */
+.composer-input {
+  position: relative;
+  flex: 1;
+}
+.composer-input textarea {
+  width: 100%;
+  resize: none;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--ink);
+  background: var(--white);
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 14px;
+}
+.composer-input textarea:disabled { background: rgba(255, 255, 255, 0.5); }
+
+.mention-popup {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(100% + 4px);
+  list-style: none;
+  margin: 0;
+  padding: 4px;
+  max-height: 220px;
+  overflow-y: auto;
+  background: var(--white);
+  border: 1px solid var(--ink);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+  z-index: 50;
+}
+.mention-popup li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  font-size: 13px;
+  color: var(--ink);
+  cursor: pointer;
+}
+.mention-popup li:hover,
+.mention-popup li.selected {
+  background: var(--neon);
+}
+.mention-popup-avatar {
+  width: 22px; height: 22px;
+  display: grid; place-items: center;
+  font-size: 14px;
+  background: var(--neon);
+  border: 1px solid var(--ink);
+  border-radius: 5px;
+}
+
+/* ---------- Unread mention badge in sidebar ---------- */
+.channels li, .dms li { position: relative; }
+.ch-name { flex: 1; }
+.mention-badge {
+  margin-left: auto;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: #d72525;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 800;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 0 0 1.5px var(--neon);
+}
+.channels li.active .mention-badge,
+.dms li.active .mention-badge {
+  box-shadow: 0 0 0 1.5px var(--ink);
+}
+
+/* =========================================================
+   Mobile (phone) — Slack iOS/Android アプリ風レイアウト
+========================================================= */
+@media (max-width: 767px) {
+  /* iOS の URL バー伸縮を考慮 */
+  html, body, #root { height: 100dvh; }
+
+  .layout, .layout.with-thread {
+    display: block;
+    height: 100dvh;
+    position: relative;
+  }
+
+  /* サイドバーとメインを排他表示 */
+  .sidebar,
+  .main {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    height: 100dvh;
+    border: 0;
+  }
+  .sidebar { z-index: 10; }
+  .main    { z-index: 20; }
+
+  .layout.mobile-list .main    { display: none; }
+  .layout.mobile-chat .sidebar { display: none; }
+
+  /* スレッドパネル: 全画面オーバーレイ */
+  .thread {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    height: 100dvh;
+    z-index: 30;
+    border-left: 0;
+  }
+
+  /* 戻るボタン表示 */
+  .back-button { display: inline-flex; align-items: center; justify-content: center; }
+
+  /* ヘッダー */
+  .channel-header {
+    padding: 12px 12px;
+    font-size: 16px;
+    padding-top: max(12px, env(safe-area-inset-top));
+  }
+  .channel-header-avatar { width: 28px; height: 28px; font-size: 16px; }
+
+  /* サイドバー: 全画面表示時に少しゆとり */
+  .sidebar {
+    padding: 12px;
+    padding-top: max(12px, env(safe-area-inset-top));
+    padding-bottom: max(12px, env(safe-area-inset-bottom));
+  }
+  .workspace { font-size: 18px; padding: 8px 4px 12px; }
+
+  /* メッセージ表示 */
+  .messages {
+    padding: 14px 16px;
+    gap: 16px;
+  }
+  .msg-avatar {
+    width: 40px;
+    height: 40px;
+    font-size: 22px;
+  }
+  .msg-body { font-size: 15px; }
+
+  /* コンポーザ: 下端固定、Safe Area */
+  .composer {
+    padding: 10px 12px;
+    padding-bottom: max(10px, env(safe-area-inset-bottom));
+    gap: 6px;
+  }
+  .composer-input textarea {
+    font-size: 16px;          /* iOS で 16px 未満だとフォーカス時に自動ズームされる */
+    padding: 10px 12px;
+  }
+  .composer button {
+    padding: 0 14px;
+    min-height: 44px;
+  }
+
+  /* タッチ向け: ホバー要素は常時表示、ターゲットを 36px に */
+  .msg-actions {
+    display: flex;            /* hover を要求しない */
+    position: static;
+    margin-top: 6px;
+    background: transparent;
+    border: 0;
+    box-shadow: none;
+    padding: 0;
+    gap: 6px;
+  }
+  .msg-action {
+    width: 36px;
+    height: 36px;
+    background: var(--white);
+    border: 1px solid var(--ink);
+    border-radius: 999px;
+    font-size: 15px;
+  }
+  .msg-action.danger { color: #c0392b; }
+
+  /* リアクション: タップしやすく */
+  .reaction { padding: 4px 10px; font-size: 13px; }
+  .reaction-pick { font-size: 22px; padding: 6px 10px; }
+
+  /* チャンネル/DM 一覧アイテム: 行高さアップ */
+  .channels li, .dms li {
+    padding: 10px 10px;
+    font-size: 15px;
+  }
+  .dm-avatar { width: 28px; height: 28px; font-size: 16px; }
+
+  .new-channel input,
+  .new-channel button { min-height: 40px; }
+  .new-channel input { font-size: 16px; }
+
+  .me { padding: 10px 8px; }
+  .me-avatar { width: 36px; height: 36px; font-size: 22px; }
+  .me-name { font-size: 15px; }
+
+  /* アバターピッカー: 列数を減らして指で押しやすく */
+  .avatar-picker { grid-template-columns: repeat(6, 1fr); gap: 6px; }
+  .avatar-pick { font-size: 22px; padding: 8px 0; }
+
+  .section-action { width: 28px; height: 28px; }
+
+  /* スレッドのヘッダーにも戻る扱いの大きい閉じるボタン */
+  .thread-header { padding: 14px 14px; padding-top: max(14px, env(safe-area-inset-top)); }
+  .thread-close { width: 36px; height: 36px; font-size: 20px; }
+}
+
+/* タブレット: 中間サイズではサイドバーをやや細く */
+@media (min-width: 768px) and (max-width: 1023px) {
+  .layout                 { grid-template-columns: 220px 1fr; }
+  .layout.with-thread     { grid-template-columns: 220px 1fr 360px; }
+}

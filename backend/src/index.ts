@@ -34,6 +34,7 @@ interface Message {
   replyCount: number;
   lastReplyAt?: string;
   reactions: Reactions;
+  mentions: string[];
 }
 
 interface DB {
@@ -50,6 +51,30 @@ const AVATAR_POOL = [
 ];
 function randomAvatar(): string {
   return AVATAR_POOL[Math.floor(Math.random() * AVATAR_POOL.length)];
+}
+
+// Greedy mention 抽出: ユーザー名を長さ降順で並べ、@<name> が現れる位置を貪欲マッチする
+function extractMentions(body: string, users: User[]): string[] {
+  const sorted = [...users].sort((a, b) => b.name.length - a.name.length);
+  const found = new Set<string>();
+  let i = 0;
+  while (i < body.length) {
+    if (body[i] === '@') {
+      let matched = false;
+      for (const u of sorted) {
+        if (u.name && body.startsWith(u.name, i + 1)) {
+          found.add(u.id);
+          i += 1 + u.name.length;
+          matched = true;
+          break;
+        }
+      }
+      if (!matched) i++;
+    } else {
+      i++;
+    }
+  }
+  return [...found];
 }
 
 const DATA_FILE = path.join(__dirname, '..', 'data.json');
@@ -93,6 +118,7 @@ function loadDb(): DB {
     replyCount: typeof m.replyCount === 'number' ? m.replyCount : 0,
     lastReplyAt: typeof m.lastReplyAt === 'string' ? m.lastReplyAt : undefined,
     reactions: (m.reactions && typeof m.reactions === 'object' ? m.reactions : {}) as Reactions,
+    mentions: Array.isArray(m.mentions) ? m.mentions : [],
   }));
   // replyCount を実カウントに整える
   for (const parent of messages.filter((m) => !m.parentId)) {
@@ -282,6 +308,7 @@ app.post('/api/channels/:id/messages', (req: Request, res: Response) => {
     parentId,
     replyCount: 0,
     reactions: {},
+    mentions: extractMentions(body, db.users),
   };
   db.messages.push(message);
 
@@ -313,6 +340,7 @@ app.patch('/api/messages/:id', (req: Request, res: Response) => {
 
   message.body = body;
   message.editedAt = new Date().toISOString();
+  message.mentions = extractMentions(body, db.users);
   saveDb();
   broadcast(
     { type: 'message.updated', payload: message },

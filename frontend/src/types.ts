@@ -26,6 +26,7 @@ export interface Message {
   replyCount: number;
   lastReplyAt?: string;
   reactions: Reactions;
+  mentions: string[];
 }
 
 export interface DeletedMessagePayload {
