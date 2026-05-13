@@ -6,6 +6,7 @@ node_modules/
 dist/
 */dist/
 .vite/
+*.tsbuildinfo
 
 # runtime data
 backend/data.json
