@@ -290,14 +290,33 @@ app.use(cors());
 app.use(express.json());
 
 // 共通エラーラッパ
+// Supabase 由来の PostgrestError は Error インスタンスではなく `{message, code, hint}` の
+// オブジェクトなので、それも拾って human-readable に整形して返す。
 function wrap(fn: (req: Request, res: Response) => Promise<unknown>) {
   return async (req: Request, res: Response) => {
     try {
       await fn(req, res);
     } catch (err) {
       console.error('[error]', err);
-      const msg = err instanceof Error ? err.message : 'internal error';
-      if (!res.headersSent) res.status(500).json({ error: msg });
+      let msg = 'internal error';
+      let code: string | undefined;
+      if (err instanceof Error) {
+        msg = err.message;
+      } else if (err && typeof err === 'object') {
+        const e = err as { message?: string; code?: string; hint?: string };
+        if (e.message) msg = e.message;
+        if (e.code) code = e.code;
+        if (e.hint) msg += ` (${e.hint})`;
+      }
+      // 既知の DB セットアップ漏れを分かりやすく
+      if (
+        code === 'PGRST205' || // table not in schema cache
+        code === '42P01' ||    // relation does not exist
+        code === '42703'       // column does not exist
+      ) {
+        msg = `${msg} — backend/migrations の SQL を Supabase Studio で適用してください`;
+      }
+      if (!res.headersSent) res.status(500).json({ error: msg, code });
     }
   };
 }
@@ -623,13 +642,11 @@ app.get('/api/messages/:id/replies', wrap(async (req, res) => {
 // ----- Stamps (個人ライブラリ) -----
 const ALLOWED_FONTS = new Set(['sans', 'serif', 'mono', 'rounded', 'mincho', 'pop']);
 
-app.get('/api/stamps', wrap(async (req, res) => {
-  const userId = typeof req.query?.userId === 'string' ? req.query.userId : '';
-  if (!userId) return res.status(400).json({ error: 'userId is required' });
+// ワークスペース全員が見られる。userId フィルタなし。
+app.get('/api/stamps', wrap(async (_req, res) => {
   const { data, error } = await supabase
     .from('stamps')
     .select('*')
-    .eq('user_id', userId)
     .order('created_at', { ascending: false });
   if (error) throw error;
   res.json({ stamps: (data as StampRow[]).map(stampOf) });
@@ -936,7 +953,11 @@ app.delete('/api/messages/:id', wrap(async (req, res) => {
 app.post('/api/messages/:id/reactions/toggle', wrap(async (req, res) => {
   const userId = typeof req.body?.userId === 'string' ? req.body.userId : '';
   const emoji = typeof req.body?.emoji === 'string' ? req.body.emoji.trim() : '';
-  if (!userId || !emoji) return res.status(400).json({ error: 'userId and emoji are required' });
+  const stampId = typeof req.body?.stampId === 'string' ? req.body.stampId : '';
+  if (!userId) return res.status(400).json({ error: 'userId is required' });
+  if (!emoji && !stampId) {
+    return res.status(400).json({ error: 'emoji or stampId is required' });
+  }
   const user = await getUser(userId);
   if (!user) return res.status(401).json({ error: 'unknown user' });
   const { data: mRow } = await supabase
@@ -952,16 +973,30 @@ app.post('/api/messages/:id/reactions/toggle', wrap(async (req, res) => {
     return res.status(403).json({ error: 'not a member of this channel' });
   }
 
+  // スタンプの場合はキーに `stamp:<uuid>` を使う。スタンプが存在することを検証。
+  let key: string;
+  if (stampId) {
+    const { data: s } = await supabase
+      .from('stamps')
+      .select('id')
+      .eq('id', stampId)
+      .maybeSingle();
+    if (!s) return res.status(404).json({ error: 'stamp not found' });
+    key = `stamp:${stampId}`;
+  } else {
+    key = emoji;
+  }
+
   const reactions: Reactions = { ...(m.reactions ?? {}) };
-  const users = reactions[emoji] ?? [];
+  const users = reactions[key] ?? [];
   const idx = users.indexOf(userId);
   if (idx >= 0) {
     users.splice(idx, 1);
-    if (users.length === 0) delete reactions[emoji];
-    else reactions[emoji] = users;
+    if (users.length === 0) delete reactions[key];
+    else reactions[key] = users;
   } else {
     users.push(userId);
-    reactions[emoji] = users;
+    reactions[key] = users;
   }
   const { data: updRow, error } = await supabase
     .from('messages')

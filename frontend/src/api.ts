@@ -95,8 +95,8 @@ export const api = {
       body: JSON.stringify({ userId, body, parentId, imageUrl, stamp }),
     }),
 
-  listStamps: (userId: string) =>
-    http<{ stamps: Stamp[] }>(`/api/stamps?userId=${encodeURIComponent(userId)}`),
+  // ワークスペース全員が共有するスタンプ一覧
+  listStamps: () => http<{ stamps: Stamp[] }>('/api/stamps'),
 
   createStamp: (
     userId: string,
@@ -162,6 +162,12 @@ export const api = {
     http<{ message: Message }>(`/api/messages/${messageId}/reactions/toggle`, {
       method: 'POST',
       body: JSON.stringify({ userId, emoji }),
+    }),
+
+  toggleStampReaction: (messageId: string, userId: string, stampId: string) =>
+    http<{ message: Message }>(`/api/messages/${messageId}/reactions/toggle`, {
+      method: 'POST',
+      body: JSON.stringify({ userId, stampId }),
     }),
 };
 

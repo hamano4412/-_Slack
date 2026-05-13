@@ -379,7 +379,7 @@ function Chat({
       setUsers(map);
     });
     api
-      .listStamps(user.id)
+      .listStamps()
       .then((r) => {
         if (!cancelled) setStamps(r.stamps);
       })
@@ -572,16 +572,16 @@ function Chat({
     }
   }
 
-  async function sendStamp(stamp: Stamp) {
-    if (!currentChannelId) return;
-    const snapshot: StampSnapshot = {
-      name: stamp.name,
-      text: stamp.text,
-      color: stamp.color,
-      font: stamp.font,
-    };
+  async function toggleStampReaction(messageId: string, stampId: string) {
+    const key = `stamp:${stampId}`;
+    setMessages((prev) =>
+      prev.map((m) => (m.id === messageId ? toggleReactionLocal(m, user.id, key) : m)),
+    );
+    setThreadReplies((prev) =>
+      prev.map((m) => (m.id === messageId ? toggleReactionLocal(m, user.id, key) : m)),
+    );
     try {
-      await api.sendMessage(currentChannelId, user.id, '', undefined, undefined, snapshot);
+      await api.toggleStampReaction(messageId, user.id, stampId);
     } catch (err) {
       alert(err instanceof Error ? err.message : String(err));
     }
@@ -937,7 +937,9 @@ function Chat({
           users={users}
           currentUserId={user.id}
           onlineUserIds={onlineUserIds}
+          stamps={stamps}
           onToggleReaction={toggleReaction}
+          onToggleStampReaction={toggleStampReaction}
           onOpenThread={(id) => setOpenThreadId(id)}
           onEdit={editMessage}
           onDelete={deleteMessage}
@@ -948,8 +950,6 @@ function Chat({
           onSubmit={sendDraft}
           userId={user.id}
           candidates={dmCandidates}
-          stamps={stamps}
-          onSendStamp={sendStamp}
           placeholder={
             currentChannel?.kind === 'dm'
               ? `${currentOther?.name ?? ''} に DM を送信`
@@ -972,12 +972,8 @@ function Chat({
           stamps={stamps}
           onClose={() => setOpenThreadId(null)}
           onSendReply={sendReply}
-          onSendStamp={(s) =>
-            sendReply('', {
-              stamp: { name: s.name, text: s.text, color: s.color, font: s.font },
-            })
-          }
           onToggleReaction={toggleReaction}
+          onToggleStampReaction={toggleStampReaction}
           onEdit={editMessage}
           onDelete={deleteMessage}
         />
@@ -1462,7 +1458,9 @@ function MessageList({
   users,
   currentUserId,
   onlineUserIds,
+  stamps,
   onToggleReaction,
+  onToggleStampReaction,
   onOpenThread,
   onEdit,
   onDelete,
@@ -1471,7 +1469,9 @@ function MessageList({
   users: Record<string, User>;
   currentUserId: string;
   onlineUserIds: Set<string>;
+  stamps: Stamp[];
   onToggleReaction: (messageId: string, emoji: string) => void;
+  onToggleStampReaction: (messageId: string, stampId: string) => void;
   onOpenThread: (messageId: string) => void;
   onEdit: (messageId: string, body: string) => void;
   onDelete: (messageId: string) => void;
@@ -1491,7 +1491,9 @@ function MessageList({
           users={users}
           currentUserId={currentUserId}
           isAuthorOnline={onlineUserIds.has(m.userId)}
+          stamps={stamps}
           onToggleReaction={onToggleReaction}
+          onToggleStampReaction={onToggleStampReaction}
           onOpenThread={onOpenThread}
           onEdit={onEdit}
           onDelete={onDelete}
@@ -1508,7 +1510,9 @@ function MessageRow({
   users,
   currentUserId,
   isAuthorOnline,
+  stamps,
   onToggleReaction,
+  onToggleStampReaction,
   onOpenThread,
   onEdit,
   onDelete,
@@ -1519,7 +1523,9 @@ function MessageRow({
   users: Record<string, User>;
   currentUserId: string;
   isAuthorOnline?: boolean;
+  stamps?: Stamp[];
   onToggleReaction: (messageId: string, emoji: string) => void;
+  onToggleStampReaction?: (messageId: string, stampId: string) => void;
   onOpenThread?: (messageId: string) => void;
   onEdit: (messageId: string, body: string) => void;
   onDelete: (messageId: string) => void;
@@ -1627,16 +1633,39 @@ function MessageRow({
 
         {reactionEntries.length > 0 && (
           <div className="reactions">
-            {reactionEntries.map(([emoji, userIds]) => {
+            {reactionEntries.map(([key, userIds]) => {
               const mine = userIds.includes(currentUserId);
+              const isStamp = key.startsWith('stamp:');
+              const stampId = isStamp ? key.slice('stamp:'.length) : '';
+              const stamp = isStamp ? stamps?.find((s) => s.id === stampId) : undefined;
+              const handleClick = () => {
+                if (isStamp && onToggleStampReaction) {
+                  onToggleStampReaction(message.id, stampId);
+                } else {
+                  onToggleReaction(message.id, key);
+                }
+              };
               return (
                 <button
-                  key={emoji}
-                  className={`reaction ${mine ? 'mine' : ''}`}
-                  onClick={() => onToggleReaction(message.id, emoji)}
+                  key={key}
+                  className={`reaction ${mine ? 'mine' : ''} ${isStamp ? 'reaction-stamp' : ''}`}
+                  onClick={handleClick}
                   title={userIds.join(', ')}
                 >
-                  <span>{emoji}</span>
+                  {isStamp ? (
+                    stamp ? (
+                      <span
+                        className="reaction-stamp-text"
+                        style={{ color: stamp.color, fontFamily: fontCss(stamp.font) }}
+                      >
+                        {stamp.text}
+                      </span>
+                    ) : (
+                      <span className="reaction-stamp-missing">(削除済)</span>
+                    )
+                  ) : (
+                    <span>{key}</span>
+                  )}
                   <span className="reaction-count">{userIds.length}</span>
                 </button>
               );
@@ -1694,18 +1723,42 @@ function MessageRow({
 
         {pickerOpen && (
           <div className="reaction-picker">
-            {REACTION_QUICK_PICK.map((e) => (
-              <button
-                key={e}
-                className="reaction-pick"
-                onClick={() => {
-                  onToggleReaction(message.id, e);
-                  setPickerOpen(false);
-                }}
-              >
-                {e}
-              </button>
-            ))}
+            <div className="reaction-pick-group">
+              {REACTION_QUICK_PICK.map((e) => (
+                <button
+                  key={e}
+                  className="reaction-pick"
+                  onClick={() => {
+                    onToggleReaction(message.id, e);
+                    setPickerOpen(false);
+                  }}
+                >
+                  {e}
+                </button>
+              ))}
+            </div>
+            {onToggleStampReaction && stamps && stamps.length > 0 && (
+              <>
+                <div className="reaction-pick-divider">スタンプ</div>
+                <div className="reaction-pick-stamps">
+                  {stamps.map((s) => (
+                    <button
+                      key={s.id}
+                      type="button"
+                      className="reaction-pick-stamp"
+                      onClick={() => {
+                        onToggleStampReaction(message.id, s.id);
+                        setPickerOpen(false);
+                      }}
+                      title={s.name}
+                      style={{ color: s.color, fontFamily: fontCss(s.font) }}
+                    >
+                      {s.text}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
           </div>
         )}
       </div>
@@ -1723,8 +1776,8 @@ function ThreadPanel({
   stamps,
   onClose,
   onSendReply,
-  onSendStamp,
   onToggleReaction,
+  onToggleStampReaction,
   onEdit,
   onDelete,
 }: {
@@ -1737,8 +1790,8 @@ function ThreadPanel({
   stamps: Stamp[];
   onClose: () => void;
   onSendReply: (body: string, opts?: { imageUrl?: string; stamp?: StampSnapshot }) => void;
-  onSendStamp: (stamp: Stamp) => void;
   onToggleReaction: (messageId: string, emoji: string) => void;
+  onToggleStampReaction: (messageId: string, stampId: string) => void;
   onEdit: (messageId: string, body: string) => void;
   onDelete: (messageId: string) => void;
 }) {
@@ -1780,7 +1833,9 @@ function ThreadPanel({
           users={users}
           currentUserId={currentUserId}
           isAuthorOnline={onlineUserIds.has(parent.userId)}
+          stamps={stamps}
           onToggleReaction={onToggleReaction}
+          onToggleStampReaction={onToggleStampReaction}
           onEdit={onEdit}
           onDelete={onDelete}
           hideThreadAction
@@ -1796,7 +1851,9 @@ function ThreadPanel({
             users={users}
             currentUserId={currentUserId}
             isAuthorOnline={onlineUserIds.has(m.userId)}
+            stamps={stamps}
             onToggleReaction={onToggleReaction}
+            onToggleStampReaction={onToggleStampReaction}
             onEdit={onEdit}
             onDelete={onDelete}
             hideThreadAction
@@ -1809,8 +1866,6 @@ function ThreadPanel({
         onSubmit={submit}
         userId={currentUserId}
         candidates={mentionCandidates}
-        stamps={stamps}
-        onSendStamp={onSendStamp}
         placeholder="スレッドに返信(@ でメンション)"
       />
     </aside>
@@ -1880,8 +1935,6 @@ function Composer({
   onSubmit,
   userId,
   candidates,
-  stamps,
-  onSendStamp,
   placeholder,
   disabled,
 }: {
@@ -1890,8 +1943,6 @@ function Composer({
   onSubmit: (opts?: { imageUrl?: string }) => void;
   userId: string;
   candidates: User[];
-  stamps?: Stamp[];
-  onSendStamp?: (stamp: Stamp) => void;
   placeholder?: string;
   disabled?: boolean;
 }) {
@@ -1902,7 +1953,6 @@ function Composer({
   const [selectedIdx, setSelectedIdx] = useState(0);
   const [pendingImage, setPendingImage] = useState<{ url: string; preview: string } | null>(null);
   const [uploading, setUploading] = useState(false);
-  const [showStampPicker, setShowStampPicker] = useState(false);
 
   const filtered = useMemo(() => {
     if (mentionQuery === null) return [];
@@ -2081,48 +2131,6 @@ function Composer({
       >
         {uploading ? '…' : '📎'}
       </button>
-      {onSendStamp && stamps && (
-        <div className="composer-stamp-wrap">
-          <button
-            type="button"
-            className="composer-attach"
-            onClick={() => setShowStampPicker((v) => !v)}
-            disabled={disabled}
-            title="スタンプを送信"
-          >
-            🏷️
-          </button>
-          {showStampPicker && (
-            <div className="stamp-picker">
-              {stamps.length === 0 ? (
-                <div className="stamp-picker-empty">
-                  ⚙ → スタンプ作成からスタンプを登録してください
-                </div>
-              ) : (
-                stamps.map((s) => (
-                  <button
-                    key={s.id}
-                    type="button"
-                    className="stamp-picker-item"
-                    onClick={() => {
-                      onSendStamp(s);
-                      setShowStampPicker(false);
-                    }}
-                    title={s.name}
-                  >
-                    <span
-                      className="stamp-preview small"
-                      style={{ color: s.color, fontFamily: fontCss(s.font) }}
-                    >
-                      {s.text}
-                    </span>
-                  </button>
-                ))
-              )}
-            </div>
-          )}
-        </div>
-      )}
       <button onClick={submit} disabled={!canSend}>
         送信
       </button>
